@@ -12,11 +12,21 @@ from custom_protocol.entity.custom_protocol import CustomProtocolNumber
 from receiver.repository.receiver_repository_impl import ReceiverRepositoryImpl
 from receiver.service.receiver_service import ReceiverService
 from request_generator.generator import RequestGenerator
+from request_generator.request_class_map import RequestClassMap
 from utility.color_print import ColorPrinter
+
+try:
+    from user_defined_protocol.protocol import UserDefinedProtocolNumber
+except ImportError:
+    UserDefinedProtocolNumber = None
+    ColorPrinter.print_important_message("UserDefinedProtocolNumber는 사용자가 추가적인 프로토콜을 확장하기 위해 사용합니다.")
 
 
 class ReceiverServiceImpl(ReceiverService):
     __instance = None
+
+    __requestClassMapInstance = None
+    __requestGeneratorInstance = RequestGenerator.getInstance()
 
     def __new__(cls):
         if cls.__instance is None:
@@ -35,6 +45,10 @@ class ReceiverServiceImpl(ReceiverService):
             cls.__instance = cls()
 
         return cls.__instance
+
+    def requestToInjectUserDefinedRequestClassMapInstance(self, requestClassMapInstance):
+        self.__requestClassMapInstance = requestClassMapInstance
+        self.__requestGeneratorInstance.requestToInjectUserDefinedRequestClassMapInstance(requestClassMapInstance)
 
     def requestToInjectClientSocket(self, clientSocket):
         self.__receiverRepository.injectClientSocket(clientSocket)
@@ -92,8 +106,20 @@ class ReceiverServiceImpl(ReceiverService):
                     ColorPrinter.print_important_data("received protocol",
                                                       f"Protocol Number: {protocolNumber}, Data: {data}")
 
-                    protocol = CustomProtocolNumber(protocolNumber)
-                    request = RequestGenerator.generate(protocol, data)
+                    try:
+                        protocol = CustomProtocolNumber(protocolNumber)
+
+                    except ValueError:
+                        if UserDefinedProtocolNumber is not None:
+                            try:
+                                protocol = UserDefinedProtocolNumber(protocolNumber)
+                            except ValueError:
+                                ColorPrinter.print_important_data("CustomProtocolNumber 혹은 UserDefinedProtocolNumber에서 지원하지 않는 프로토콜입니다.")
+                        else:
+                            ColorPrinter.print_important_message("Socket Client는 CustomProtocolNumber만 지원하므로 DLLS-Client 구성을 하세요!")
+                            continue
+
+                    request = self.__requestGeneratorInstance.generate(protocol, data)
                     ColorPrinter.print_important_data("processed request", f"{request}")
 
                     self.__receiverRepository.sendDataToCommandAnalyzer(request)
